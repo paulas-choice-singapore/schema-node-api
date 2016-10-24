@@ -21,7 +21,7 @@ cart.init = (env, router, schema) => {
 cart.get = (schema, req) => {
   return schema.get('/carts/{id}', {
     id: req.session.cart_id,
-    expand: 'items.product, items.variant, items.bundle_items.product, items.bundle_items.variant'
+    expand: 'items.product, items.variant, items.bundle_items.product, items.bundle_items.variant',
   });
 };
 
@@ -139,6 +139,7 @@ cart.sanitizeShipping = (shipping) => {
 
 // Ensure billing fields are sane
 cart.sanitizeBilling = (billing) => {
+  delete billing.method;
   billing = util.filterData(billing, [
     'name',
     'address1',
@@ -160,8 +161,8 @@ cart.sanitizeBilling = (billing) => {
       'token',
       'brand',
       'last4',
-      'expire_month',
-      'expire_year'
+      'exp_month',
+      'exp_year'
     ]);
   }
   return billing;
