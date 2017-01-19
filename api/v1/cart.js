@@ -2,6 +2,7 @@ const _ = require('lodash');
 const Promise = require('bluebird');
 const util = require('../util');
 const session = require('./session');
+const account = require('./account');
 
 const cart = module.exports;
 
@@ -27,11 +28,9 @@ cart.get = (schema, req) => {
 
 cart.update = (schema, req) => {
   return cart.ensureExists(schema, req).then(() => {
-    var accountId = req.session.account_id;
     var cartData = {
       cart_id: req.session.cart_id,
-      account_id: accountId,
-      $promotions: true
+      $promotions: true,
     };
     if (req.body.items) {
       cartData.items = util.filterData(req.body.items, [
@@ -41,6 +40,13 @@ cart.update = (schema, req) => {
         'options',
         'quantity'
       ]);
+    }
+    var accountEmail = req.body.account && req.body.account.email;
+    if (req.session.account_id) {
+      cartData.account_id = req.session.account_id;
+    } else if (accountEmail) {
+      cartData.account_id = null;
+      cartData.account = { email: accountEmail };
     }
     if (req.body.shipping !== undefined) {
       cartData.shipping = cart.sanitizeShipping(req.body.shipping);
@@ -54,9 +60,20 @@ cart.update = (schema, req) => {
     if (req.body.shipment_rating !== undefined) {
       cartData.shipment_rating = req.body.shipment_rating;
     }
-    return schema.put('/carts/{cart_id}', cartData).then(() => {
-      return cart.get(schema, req);
+    return schema.put('/carts/{cart_id}', cartData).then(result => {
+      // Update anonymous account if created new
+      if (accountEmail && result.account.id && !result.account.name) {
+        return schema.put('/accounts/{account_id}', {
+          account_id: result.account.id,
+          first_name: cartData.shipping.first_name,
+          last_name: cartData.shipping.last_name,
+          shipping: cartData.shipping,
+          billing: cartData.billing,
+        });
+      }
     });
+  }).then(() => {
+    return cart.get(schema, req);
   });
 };
 
@@ -114,7 +131,7 @@ cart.applyCoupon = (schema, req) => {
     coupon_code: req.body.code || req.body.coupon_code || null,
   }).then(result => {
     if (result.errors && result.errors.coupon_code) {
-      throw util.error(400, 'Coupon code is not valid');
+      return result;
     }
     return cart.get(schema, req);
   });
@@ -122,28 +139,46 @@ cart.applyCoupon = (schema, req) => {
 
 // Ensure shipping fields are sane
 cart.sanitizeShipping = (shipping) => {
+  // Restrict certain props
+  delete shipping.service_name;
+  delete shipping.price;
+  // First and last vs full name
+  if (shipping.first_name || shipping.last_name) {
+    shipping.name = shipping.first_name + ' ' + shipping.last_name;
+  }
   shipping = util.filterData(shipping, [
     'name',
+    'first_name',
+    'last_name',
     'address1',
     'address2',
+    'company',
     'city',
     'state',
     'zip',
     'country',
     'phone',
     'account_address_id',
-    'service'
+    'service',
   ]);
   return shipping;
 },
 
 // Ensure billing fields are sane
 cart.sanitizeBilling = (billing) => {
+  // Restrict certain props
   delete billing.method;
+  // First and last vs full name
+  if (billing.first_name || billing.last_name) {
+    billing.name = billing.first_name + ' ' + billing.last_name;
+  }
   billing = util.filterData(billing, [
     'name',
+    'first_name',
+    'last_name',
     'address1',
     'address2',
+    'company',
     'city',
     'state',
     'zip',
@@ -171,8 +206,11 @@ cart.sanitizeBilling = (billing) => {
 // Get cart shipment rating
 cart.shipmentRating = (schema, req) => {
   return cart.ensureExists(schema, req).then(() => {
-    req.body.shipment_rating = null;
-    return cart.update(schema, req);
+    return schema.put('/carts/{cart_id}', {
+      cart_id: req.session.cart_id,
+      shipping: req.body.shipping && cart.sanitizeShipping(req.body.shipping),
+      shipment_rating: null,
+    });
   }).then(result => {
     if (!result.items || !result.items.length) {
       return {
@@ -213,10 +251,18 @@ cart.checkout = (schema, req) => {
     // Remove cart ID from session
     return schema.put('/:sessions/{id}', {
       id: req.sessionID,
-      cart_id: null
-    }).then(() => {
-      return order;
+      cart_id: null,
+      order_id: order.id,
     });
+  }).then(session => {
+    return schema.get('/orders/{id}', { id: session.order_id });
+    // TODO: fix this
+    // return account.getOrderById(schema, {
+    //   session: req.session,
+    //   params: {
+    //     id: session.order_id,
+    //   },
+    // });
   });
 };
 

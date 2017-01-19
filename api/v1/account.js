@@ -6,33 +6,43 @@ const account = module.exports;
 // Init routes
 account.init = (env, router, schema) => {
   const requireSession = session.require.bind(this, schema);
+  const requireAccount = account.require.bind(this, schema);
   router.get('/account', requireSession, account.get.bind(this, schema));
-  router.put('/account', requireSession, account.update.bind(this, schema));
+  router.put('/account', requireSession, requireAccount, account.update.bind(this, schema));
   router.post('/account', requireSession, account.create.bind(this, schema));
   router.post('/account/login', requireSession, account.login.bind(this, schema));
   router.post('/account/logout', requireSession, account.logout.bind(this, schema));
   router.post('/account/recover', requireSession, account.recover.bind(this, schema));
+  router.get('/account/orders', requireSession, requireAccount, account.getOrders.bind(this, schema));
+  router.get('/account/orders/:id', requireSession, requireAccount, account.getOrderById.bind(this, schema));
+  router.get('/account/addresses', requireSession, requireAccount, account.getAddresses.bind(this, schema));
+  router.get('/account/cards', requireSession, requireAccount, account.getCards.bind(this, schema));
+  router.get('/account/reviews', requireSession, requireAccount, account.getReviews.bind(this, schema));
+  router.get('/account/credits', requireSession, requireAccount, account.getCredits.bind(this, schema));
+};
+
+// Require logged in account
+account.require = (schema, req, res, next) => {
+  if (!req.session.account_id) {
+    return res.status(400).json({
+      error: 'Account must be logged in to access this resource'
+    });
+  }
+  next();
 };
 
 // Get current account
 account.get = (schema, req, res) => {
   if (!req.session.account_id) {
-    return res.status(400).json({
-      error: 'Account must be logged in before #get'
-    });
+    return null;
   }
   return schema.get('/accounts/{id}', {
-    id: req.session.account_id
+    id: req.session.account_id,
   });
 };
 
 // Update current account
 account.update = (schema, req, res) => {
-  if (!req.session.account_id) {
-    return res.status(400).json({
-      error: 'Account must be logged in before #update'
-    });
-  }
   req.body.id = req.session.account_id;
   const error = account.filterData(req);
   if (error) {
@@ -80,7 +90,8 @@ account.logout = (schema, req) => {
   return schema.put('/:sessions/{id}', {
     id: req.sessionID,
     account_id: null,
-    account_group: null
+    account_group: null,
+    email: null,
   }).return({
     success: true
   });
@@ -93,10 +104,12 @@ account.loginSession = (schema, req, result) => {
   }
   var accountId = result ? result.id : null;
   var accountGroup = result ? result.group : null;
+  var accountEmail = result ? result.email : null;
   return schema.put('/:sessions/{id}', {
     id: req.sessionID,
     account_id: accountId,
-    account_group: accountGroup
+    account_group: accountGroup,
+    email: accountEmail,
   }).then(() => {
     if (req.session.cart_id) {
       return schema.put('/carts/{id}', {
@@ -278,4 +291,71 @@ account.filterData = (req) => {
   } catch (err) {
     return { error: err.toString() };
   }
+};
+
+// Get account orders list
+account.getOrders = (schema, req) => {
+  const query = req.query || {};
+  return schema.get('/orders', {
+    account_id: req.session.account_id,
+    fields: query.fields,
+    limit: query.limit,
+    page: query.page,
+    expand: 'items.product, items.variant, items.bundle_items.product, items.bundle_items.variant',
+  });
+};
+
+// Get account orders list
+account.getOrderById = (schema, req) => {
+  const query = req.query || {};
+  return schema.get('/orders/{id}', {
+    account_id: req.session.account_id,
+    id: req.params.id,
+    fields: query.fields,
+    expand: 'items.product, items.variant, items.bundle_items.product, items.bundle_items.variant',
+  });
+};
+
+// Get account addresses list
+account.getAddresses = (schema, req) => {
+  const query = req.query || {};
+  return schema.get('/accounts/{id}/addresses', {
+    id: req.session.account_id,
+    fields: query.fields,
+    limit: query.limit,
+    page: query.page,
+  });
+};
+
+// Get account credit cards list
+account.getCards = (schema, req) => {
+  const query = req.query || {};
+  return schema.get('/accounts/{id}/cards', {
+    id: req.session.account_id,
+    fields: query.fields,
+    limit: query.limit,
+    page: query.page,
+  });
+};
+
+// Get account reviews list
+account.getReviews = (schema, req) => {
+  const query = req.query || {};
+  return schema.get('/reviews', {
+    account_id: req.session.account_id,
+    fields: query.fields,
+    limit: query.limit,
+    page: query.page,
+  });
+};
+
+// Get account credits list
+account.getCredits = (schema, req) => {
+  const query = req.query || {};
+  return schema.get('/accounts/{id}/credits', {
+    id: req.session.account_id,
+    fields: query.fields,
+    limit: query.limit,
+    page: query.page,
+  });
 };
