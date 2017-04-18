@@ -19,6 +19,7 @@ Schema.io <==> NodeJS API (This Package) <==> Your App (React/Angular/Ember/Rail
 ```bash
 NODE_ENV=development
 PORT=3001
+CACHE_SECONDS=15
 FORCE_SSL=true # redirect all requests to https
 SCHEMA_CLIENT_ID=my-client-id
 SCHEMA_CLIENT_KEY=my-client-key
